@@ -1,67 +1,102 @@
 import streamlit as st
 import pandas as pd
 
-# ---------------- Page Configuration ----------------
-st.set_page_config(
-    page_title="Singapore Residents Analysis",
-    page_icon="📊",
-    layout="wide"
-)
+# Page configuration for a "beautiful" layout
+st.set_page_config(page_title="Singapore Population Analytics", layout="wide")
 
-# ---------------- Title ----------------
-st.title("📊 Singapore Residents Data Analysis")
-st.markdown("Pandas-based analysis using Streamlit (No Charts Version)")
+# Custom CSS to enhance the look
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f7f9;
+    }
+    .stMetric {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# ---------------- File Upload ----------------
-uploaded_file = st.file_uploader(
-    "📂 Upload Singapore_Residents.csv",
-    type=["csv"]
-)
+@st.cache_data
+def load_data():
+    # Loading the dataset referenced in your notebook
+    df = pd.read_csv('Singapore_Residents.csv')
+    return df
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+try:
+    df = load_data()
+    
+    # --- SIDEBAR NAVIGATION ---
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio("Go to", [
+        "Total Population", 
+        "Ethnic Group Ratios", 
+        "Gender Analysis"
+    ])
 
-    # ---------------- View Raw Data ----------------
-    with st.expander("📄 View Raw Dataset"):
-        st.dataframe(df, use_container_width=True)
+    st.title("🇸🇬 Singapore Resident Population Analytics")
+    st.markdown("---")
 
-    # ---------------- Sidebar Filter ----------------
-    st.sidebar.header("🔎 Filter Options")
+    if page == "Total Population":
+        st.header("Annual Population Overview")
+        
+        # Displaying total population every year
+        pop_df = df[df['Residents'] == 'Total Residents'][['Year', 'Count']].sort_values('Year')
+        
+        # Key Metrics Row
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Latest Count (2018)", f"{pop_df['Count'].iloc[-1]:,}")
+        col2.metric("Starting Count (2000)", f"{pop_df['Count'].iloc[0]:,}")
+        growth = ((pop_df['Count'].iloc[-1] - pop_df['Count'].iloc[0]) / pop_df['Count'].iloc[0]) * 100
+        col3.metric("Total Growth", f"{growth:.2f}%")
 
-    resident_types = df["Residents"].unique()
-    selected_resident = st.sidebar.selectbox(
-        "Select Resident Type",
-        resident_types
-    )
+        st.subheader("Data Summary")
+        st.dataframe(pop_df.style.format({"Count": "{:,}"}), use_container_width=True)
 
-    # ---------------- Filtered Data ----------------
-    filtered_df = df[df["Residents"] == selected_resident][["Year", "Count"]]
+    elif page == "Ethnic Group Ratios":
+        st.header("Ethnic Group Gender Ratios")
+        st.info("Ratio calculation: Female Count / Male Count")
 
-    st.subheader(f"📌 Year-wise Data for: {selected_resident}")
-    st.dataframe(filtered_df, use_container_width=True)
+        # Logic for Other Ethnic Groups Ratio
+        years_filter = [2000, 2003, 2006, 2009, 2012]
+        
+        eth_m = df[(df['Residents'] == 'Other Ethnic Groups (Males)') & (df['Year'].isin(years_filter))]
+        eth_f = df[(df['Residents'] == 'Other Ethnic Groups (Females)') & (df['Year'].isin(years_filter))]
+        
+        merge_df = pd.merge(eth_f, eth_m, on='Year', suffixes=('_Female', '_Male'))
+        merge_df['Ratio'] = merge_df['Count_Female'] / merge_df['Count_Male']
+        
+        # Displaying results in a beautiful table
+        st.subheader("Other Ethnic Groups (3-Year Intervals)")
+        st.table(merge_df[['Year', 'Count_Female', 'Count_Male', 'Ratio']].style.format({
+            "Count_Female": "{:,}", 
+            "Count_Male": "{:,}", 
+            "Ratio": "{:.4f}"
+        }))
 
-    # ---------------- Growth Rate Calculation ----------------
-    st.subheader("📊 Year-wise Growth Rate (%)")
+    elif page == "Gender Analysis":
+        st.header("Chinese & Indian Resident Analysis")
+        
+        tab1, tab2 = st.tabs(["Chinese Residents", "Indian Residents"])
+        
+        with tab1:
+            # Male vs Female Chinese Residents
+            c_m = df[df['Residents'] == 'Total Male Chinese']
+            c_f = df[df['Residents'] == 'Total Female Chinese']
+            c_merge = pd.merge(c_f, c_m, on='Year', suffixes=('_F', '_M'))
+            st.dataframe(c_merge[['Year', 'Count_F', 'Count_M']], use_container_width=True)
 
-    t1 = filtered_df.copy()
-    t2 = filtered_df.copy()
+        with tab2:
+            # Indian Resident Ratio Logic
+            in_m = df[df['Residents'] == 'Total Male Indians']
+            in_f = df[df['Residents'] == 'Total Female Indians']
+            in_merge = pd.merge(in_f, in_m, on='Year', suffixes=('_F', '_M'))
+            in_merge['Ratio'] = in_merge['Count_F'] / in_merge['Count_M']
+            
+            st.write("Yearly Gender Breakdown for Indian Residents:")
+            st.dataframe(in_merge[['Year', 'Count_F', 'Count_M', 'Ratio']], use_container_width=True)
 
-    t2["Year"] = t2["Year"] + 1
-    t2 = t2.rename(columns={"Count": "Previous_Count"})
-
-    growth_df = pd.merge(t1, t2, on="Year", how="inner")
-    growth_df["Growth_Rate (%)"] = (
-        (growth_df["Count"] - growth_df["Previous_Count"])
-        / growth_df["Previous_Count"]
-    ) * 100
-
-    final_growth = growth_df[["Year", "Growth_Rate (%)"]]
-
-    st.dataframe(
-        final_growth.style.format({"Growth_Rate (%)": "{:.2f}"}),
-        use_container_width=True
-    )
-
-else:
-    st.info("⬆ Please upload the CSV file to view the analysis.")
-
+except FileNotFoundError:
+    st.error("Please ensure 'Singapore_Residents.csv' is in the same directory as this script.")
